@@ -31,6 +31,11 @@ async function showIndex(display: Display)
     display.showIndex(json);
 }
 
+// TODO: Move to a different config.js file and import settings
+const CONFIG = {
+    EXTERNAL_STORAGE_BASE_URL: 'https://storage.googleapis.com/cryptic-crossword/crosswords'
+};
+
 async function showWebpage()
 {
     let display : Display;
@@ -38,17 +43,27 @@ async function showWebpage()
     const queryString = window.location.search;
     const idMatch = queryString.match(/id=(\d+)/);
     const singleMatch = queryString.match(/single=(\d+)\.(across|down)\.(\d+)/);
+    const customIdMatch = queryString.match(/customId=([0-9a-fA-F-]{36})/);
     display = new Display();
 
     try 
     {
-        if (idMatch)
+        if (customIdMatch)
+        {
+            const customId = customIdMatch[1];
+            const crosswordUrl = `${CONFIG.EXTERNAL_STORAGE_BASE_URL}/${customId}.json`;
+            const response = await fetch(crosswordUrl);
+            const crosswordJson = await response.json();
+            await display.showCrossword(crosswordJson, {});
+        }
+        else if (idMatch)
         {
             await showCrossword(display, idMatch[1]);
         }
         else if (singleMatch)
         {
-            await showSingle(display, singleMatch[1], singleMatch[2], singleMatch[3]);
+            const [_, crosswordId, direction, defId] = singleMatch;
+            await showSingle(display, crosswordId, direction, defId);
         }
         else
         {
