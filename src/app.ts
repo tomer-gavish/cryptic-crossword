@@ -14,7 +14,6 @@ async function showCrossword(display: Display, idValue: string)
 async function showSingle(display: Display, crosswordId: string, 
                           direction: string, defId: string)
 {
-
     const response = await fetch(`crosswords/${crosswordId}.json`);
     if (!response.ok) 
     {
@@ -41,17 +40,17 @@ async function showWebpage()
     let display : Display;
 
     const queryString = window.location.search;
+    const externalIdMatch = queryString.match(/id=([0-9a-fA-F-]{32,})/);
     const idMatch = queryString.match(/id=(\d+)/);
     const singleMatch = queryString.match(/single=(\d+)\.(across|down)\.(\d+)/);
-    const customIdMatch = queryString.match(/customId=([0-9a-fA-F-]{36})/);
     display = new Display();
 
     try 
     {
-        if (customIdMatch)
+        if (externalIdMatch)
         {
-            const customId = customIdMatch[1];
-            const crosswordUrl = `${CONFIG.EXTERNAL_STORAGE_BASE_URL}/${customId}.json`;
+            const externalId = externalIdMatch[1];
+            const crosswordUrl = `${CONFIG.EXTERNAL_STORAGE_BASE_URL}/${externalId}.json`;
             const response = await fetch(crosswordUrl);
             const crosswordJson = await response.json();
             await display.showCrossword(crosswordJson, {});
@@ -78,5 +77,5 @@ async function showWebpage()
 }
 
 document.addEventListener("DOMContentLoaded", async function() {
-    await showWebpage();
+    await showWebpage(); 
 });

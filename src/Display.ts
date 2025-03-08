@@ -12,7 +12,9 @@ String.prototype.replaceAt = function(index, replacement) {
 };
 
 type CrosswordPuzzleInfo = {
-    id: number;
+    id: number | string;
+    name: string | undefined;
+    date: Date | undefined;
     author: string;
     dimensions: {
         rows: number;
@@ -92,7 +94,7 @@ enum StorageSource {
 
 class StorageContext
 {
-    private crossword_id : number;
+    private crossword_id : number | string;
 
     private rows : number;
     private cols : number;
@@ -113,7 +115,7 @@ class StorageContext
 
     private readonly EMPTY_CHAR = "?";
 
-    constructor(crossword_id: number, rows: number, cols: number, 
+    constructor(crossword_id: number | string, rows: number, cols: number, 
                 max_clues_across: number, max_clues_down: number)
     {
         this.crossword_id = crossword_id;
@@ -268,7 +270,7 @@ class StorageContext
         return this.context!["solved_clues"][direction].charAt(clueId - 1) == Number(true).toString();
     }
 
-    public getCrosswordId() : number 
+    public getCrosswordId() : number | string 
     {
         return this.crossword_id;
     }
@@ -347,7 +349,7 @@ export default class Display
         this.puzzleInfo = puzzleInfo;
         this.config = config;
 
-        document.getElementById("title")!.textContent = `תשבץ אינטל ${puzzleInfo.id}`;
+        document.getElementById("title")!.textContent = this.getCrosswordName(puzzleInfo);
         document.getElementById("author")!.textContent = `${puzzleInfo.author}`;
         this.crossword.innerHTML = '';
         this.clues_horizontal.innerHTML = '<h3>מאוזן</h3>';
@@ -387,7 +389,7 @@ export default class Display
         this.setupMoreOptions();
         this.setupCurrentDefMarkSolved();
 
-        this.setTitle(`תשבץ אינטל ${puzzleInfo.id}`);
+        this.setTitle(this.getCrosswordName(puzzleInfo));
 
         document.getElementById("wrapper")!.classList.remove("hide");
         document.getElementById("loader")?.remove();
@@ -421,7 +423,7 @@ export default class Display
 
         await this.showCrossword(puzzleInfo, {"skipStorage": true, "skipShare": true, "skipContextMenu": true, "skipCurrentDef": true});
         
-        document.getElementById("title")!.textContent = `הגדרה אקראית מתוך תשבץ אינטל ${puzzleInfo.id}`;
+        document.getElementById("title")!.textContent = `הגדרה אקראית מתוך ${this.getCrosswordName(puzzleInfo)}`;
         const h3Element = document.querySelector("#clues_horizontal h3");
         if (h3Element)
         {
@@ -436,7 +438,7 @@ export default class Display
 
         this.clues_vertical.innerHTML = '';
 
-        this.setTitle(`הגדרה מתוך תשבץ אינטל ${puzzleInfo.id}`);
+        this.setTitle(`הגדרה מתוך ${this.getCrosswordName(puzzleInfo)}`);
 
         const button = document.createElement("button");
         button.classList.add("btn", "btn-outline-dark", "random_single");
@@ -448,6 +450,26 @@ export default class Display
         document.getElementById("current_definition_mark_solved")!.style.display = "none";
 
         this.selectDefinitionById(1, Direction.Horizontal);
+    }
+
+    private getCrosswordName(puzzleInfo: CrosswordPuzzleInfo) : string
+    {
+        if (typeof puzzleInfo.name === 'undefined' && typeof puzzleInfo.date === 'undefined') {
+            return `תשבץ אינטל ${puzzleInfo.id}`;
+        }
+
+        let result = 'תשבץ ';
+        if (typeof puzzleInfo.name !== 'undefined') {
+            result += puzzleInfo.name;
+        }
+
+        if (typeof puzzleInfo.date !== 'undefined') {
+            const date = new Date(puzzleInfo.date);
+            const formattedDate = `${date.getDate()}/${(date.getMonth() + 1)}/${date.getFullYear()}`;
+            result += ` ${formattedDate}`;
+        }
+
+        return result;
     }
 
     private setTitle(title: string)
