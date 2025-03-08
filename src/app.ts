@@ -41,7 +41,7 @@ async function showWebpage()
 
     const queryString = window.location.search;
     const externalIdMatch = queryString.match(/id=([0-9a-fA-F-]{32,})/);
-    const idMatch = queryString.match(/id=(\d+)/);
+    const idMatch = queryString.match(/id=(\d+)(?![0-9a-fA-F-])/);
     const singleMatch = queryString.match(/single=(\d+)\.(across|down)\.(\d+)/);
     display = new Display();
 
