@@ -59,13 +59,18 @@ and the SDK's offline write queue gives reconnect handling for free. The solver 
 | Cloudflare Durable Objects / PartyKit | Best | ~$5/mo min | Low | New vendor + deploy pipeline | Technically the *cleanest* fit — one authoritative object per room — but a second cloud to operate |
 | Supabase Realtime / Ably / Liveblocks | Good | Free tier | Low | New vendor | Fine, but no advantage over RTDB given the existing GCP footprint |
 
-**Decisions:**
+**Decisions (all settled):**
 - Stay on GCP → Firebase RTDB (see *Why not Firestore* below).
 - **Anonymous auth + nickname now, upgradeable to real accounts later** — see *Identity* below.
-- **One shared grid**, Google-Docs style, with visible cursors. Letters record who typed them (`by`), which
-  costs nothing now and enables per-player attribution later.
+- **One shared grid** — a single authoritative room state. Letters record who typed them (`by`), enabling
+  per-player attribution.
+- **Shared truth, private view**: every player always writes to the room; the "advance on my own" toggle
+  controls only what *your* screen renders. See *Reveal policy* below.
 - **Rooms are created in the solver**, on demand, via a "solve together" button. `CrosswordDigitization` stays
   decoupled — its job still ends at uploading JSON to the bucket.
+- **Solutions are an optional capability** — graceful degradation when absent, no key capture, no crowd-derivation.
+- **Text scratchpads ship in v1**, shared and synced (not private). Voice notes deferred, schema reserved.
+- **Mobile clue view ships after multiplayer.**
 
 ### Why not Firestore
 
@@ -151,7 +156,14 @@ rooms/{roomId}/
   cells/     "3_7": { ch: "א", by: <uid>, at: <ts> }        // key deleted when cleared
   solved/    "across_12": { v: true, by: <uid>, at: <ts> }
   presence/  {uid}: { name, color, row, col, dir, at }       // onDisconnect().remove()
+  notes/     "across_12"/{noteId}: { by, at, kind: "text", text }
+             //  ^ clueKey = "<direction>_<clueId>". `kind` is reserved now so voice
+             //    notes ({ kind: "voice", audioUrl, durationMs }) slot in with no migration.
 ```
+
+The reveal-policy toggle is **not** in the schema — it is a local view preference in `localStorage`, since it
+changes nothing another player needs to know. (If it ever should be visible — "Tomer is solving heads-down" —
+it belongs in `presence/{uid}`, which is already a per-player node.)
 
 `roomId` = `push().key` (20 chars of ordered randomness) → unguessable, so **the link is the capability**.
 Anyone with the link can edit; that is the feature. Say so in the share modal.
@@ -168,9 +180,17 @@ Anyone with the link can edit; that is the feature. Say so in the share modal.
     "by": { ".validate": "newData.val() === auth.uid" }
   }},
   "presence": { "$uid": { ".write": "auth.uid === $uid" } },
+  "notes": { "$clueKey": { "$noteId": {
+    ".write": "auth != null && (!data.exists() || data.child('by').val() === auth.uid)",
+    "by":   { ".validate": "newData.val() === auth.uid" },
+    "text": { ".validate": "newData.isString() && newData.val().length <= 2000" }
+  }}},
   "meta": { ".write": "auth != null && (!data.exists() || newData.child('createdBy').val() === data.child('createdBy').val())" }
 }}}}
 ```
+
+Notes are **readable by the whole room** (covered by the room-level `.read`) but **only editable and deletable
+by their author** — anyone can add a note, nobody can rewrite yours.
 
 ### Joining with existing solo progress
 
@@ -212,6 +232,11 @@ lines *moved* and ~60 lines *edited*. This is additive, not a rewrite.
 3. **Wire remote changes in.** After `storageContext.init()`, subscribe: `onChange(c => paintCell(...))` for
    letters, and tick the clue checkbox for `solved` changes. `paintCell` is now callable from a network event
    exactly as from a keystroke.
+
+   This is also the hook the reveal policy plugs into (Phase 4): `paintCell` consults the policy and either
+   paints the remote letter or holds it back with an affordance. Because the policy lives *only* here — and
+   the room state stays authoritative regardless — "advance on my own" costs one branch in one function, not
+   a second state layer.
 
 **Do not use `rect` fill for other players' cursors.** `highlightDefinitionByCoordinate` (`Display.ts:1163`)
 paints selection by directly setting `fill` on rects and clears via
@@ -286,10 +311,19 @@ configured.
 - **Phase 1 — infra.** Firebase on the existing GCP project, anon auth, rules, `firebase.json`, `src/config.ts`.
   No UI yet.
 - **Phase 2 — letter sync.** `RoomStorageContext`, `?room=` routing, "solve together" button, share modal.
-  **This is the first real slice:** two browsers, same room link, one types, both see it.
+  Writes the full schema (including the `notes/` subtree and its rules) even though notes have no UI yet, so
+  nothing needs migrating later. **This is the first real slice:** two browsers, same room link, one types,
+  both see it.
 - **Phase 3 — presence.** Overlay layer, per-player colours, name chips, live player list.
-- **Phase 4 — polish.** Solved-marker sync, the join-with-solo-progress merge banner, a connection-status
+- **Phase 4 — reveal policy.** The `live`/`onDemand` toggle, the held-back-letter affordance, per-clue
+  "another player has filled this" badges, reveal-clue / reveal-one-letter actions, and contested-cell
+  flagging. Deliberately *after* presence: it is much easier to reason about — and to demo — once you can see
+  who else is in the room.
+- **Phase 5 — scratchpad notes.** Per-clue shared text notes on the schema reserved in Phase 2.
+- **Phase 6 — polish.** Solved-marker sync, the join-with-solo-progress merge banner, a connection-status
   indicator, room cleanup.
+- **Phase 7 — mobile clue view.** Swipeable single-definition view built out from `showSingle()`, hosting the
+  scratchpad panel.
 
 ---
 
@@ -340,38 +374,60 @@ than it first appears.
 
 ---
 
-## UX decisions: what must be settled now vs later
+## Reveal policy — "advance on my own"
 
-The rule: **schema-affecting UX now, pixel UX later.** Anything that becomes synced state is expensive to
-retrofit (and worse to migrate in live rooms); anything purely visual is cheap to change.
+**Chosen model: shared truth, private view.** There is exactly one authoritative room state and every player
+always writes to it. The toggle controls only what the local screen renders. No second state layer, no merge
+logic, no conflict UI.
 
-**Must be settled before Phase 2** (they change the schema or the render architecture):
+Concretely, `paintCell(coord, letter)` gains a policy check. Two modes, a local `localStorage` preference:
 
-1. **Typing visibility.** "Advance on my own, reveal others on demand" is the single most architecturally
-   significant idea on the list — it breaks the assumption that the local grid mirrors room state. It forces
-   two layers: `roomState` (truth) and `myView` (what I've chosen to see), with `paintCell` consulting a
-   reveal policy. The unresolved sub-question: *do my letters still flow into the room while I'm not seeing
-   yours?* Yes → asymmetric visibility. No → genuinely private grids with explicit merge, which is a
-   different product from "one shared grid".
-2. **Per-clue scratchpad / notes / discussion.** Synced state → needs a schema slot now:
-   `rooms/{id}/clues/{across_12}/notes/{noteId} = {by, at, text}`. Cheap to reserve, expensive to bolt on.
-3. **Voice notes.** Audio is a *blob*, not database state — it belongs in object storage with only a
-   reference in RTDB. Natural reuse: the existing GCS bucket + `upload_crossword` Cloud Function pattern
-   already solves "browser POSTs content, gets back a public URL". Recording is `MediaRecorder`; Safari/iOS
-   has real format quirks worth prototyping early.
-4. **Private vs shared notes.** Whether a note is visible to the room or only to its author is a rules-level
-   decision, not a UI toggle — it has to be in the security rules from the start.
+- **`live`** (default) — remote letters paint immediately. Today's assumed behaviour.
+- **`onDemand`** — remote letters are held back. The room state still updates underneath; the cell renders
+  empty but carries a subtle *"something is here"* affordance (a corner tick, not a fill — remember
+  `highlightDefinitionByCoordinate` owns `rect` fill). The clue list shows a per-clue badge: *"another player
+  has filled this"*. From there the player chooses: **reveal the clue**, **reveal one letter** (a hint), or
+  ignore it and keep solving.
 
-**Can wait for wireframes:** the mobile clue view's actual layout, colour/avatar treatment for players, the
-share modal's copy, animation and transitions.
+This is where the peer-sourced hint from *The solutions gap* lands: **"reveal one letter" reads from room
+state, not from an answer key**, so it works on digitized crosswords that have no key at all.
 
-**The mobile "clue view"** is a strong idea with an existing foothold: `showSingle()` (`Display.ts`, reached
-via `?single=<id>.<dir>.<n>`) already renders a single definition standalone. Extending it into a swipeable
-per-clue view — one definition, its cells pre-filled with letters already known from crossing answers, plus
-the notes/voice/discussion panel for that clue — reuses `nextCoordinate`/`prevCoordinate` and the existing
-clue metadata. Note it is *not* a multiplayer feature but it is the natural **host** for the notes and
-discussion panels, so its information architecture should be sketched alongside them even if the visuals land
-later.
+### The edge case this creates
+
+In `onDemand` mode you can type into a cell that already holds a *different, unrevealed* remote letter. Plain
+LWW would silently destroy another player's work — and neither of you would ever know.
+
+**Handling:** compare before writing. If the incoming local letter differs from an unrevealed remote letter,
+the write still proceeds (LWW stands, your input is never blocked), but the cell is flagged **contested** and
+shows an indicator. You then find out that you and someone else disagree about that square — which is
+precisely the information worth surfacing. Cheap to implement (one comparison in `applyLetter`) and it turns a
+silent data-loss bug into a feature.
+
+`live` mode is unaffected: you can see the letter you're overwriting, so there is nothing to warn about.
+
+---
+
+## Scratchpad notes
+
+Shipping in v1, **shared and synced** — any room member can read every note; only the author can edit or
+delete their own (enforced in the rules above, not in UI). Per-clue, keyed `"<direction>_<clueId>"`.
+
+The `kind: "text"` discriminator is written from day one so **voice notes need no migration later** — they
+become `{ kind: "voice", audioUrl, durationMs }` with the blob in object storage and only the reference in
+RTDB. When that lands, the natural reuse is the existing GCS bucket + `upload_crossword` Cloud Function
+pattern, which already solves "browser POSTs content, gets back a public URL". Worth a `MediaRecorder` spike
+on iOS/Safari before committing to it — the audio format story there is genuinely fiddly.
+
+## Mobile clue view (post-multiplayer)
+
+Deferred until after multiplayer ships, but noted here because it is the natural **host** for the notes panel,
+so its information architecture is worth sketching before the notes UI is finalized.
+
+Existing foothold: `showSingle()` (`Display.ts:1397` area, reached via `?single=<id>.<dir>.<n>`) already
+renders one definition standalone. Extending it into a swipeable per-clue view — one definition at a time,
+its cells pre-filled with letters already known from crossing answers, plus that clue's scratchpad and (later)
+voice notes — reuses `nextCoordinate`/`prevCoordinate` and the existing clue metadata rather than adding a new
+traversal model.
 
 ---
 
