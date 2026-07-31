@@ -4,9 +4,12 @@
   "description": "An archive of a weekly cryptic crossword release",
   "main": "dist/app.bundle.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run build && playwright test",
     "build": "npx webpack --mode production",
-    "start": "webpack serve --live-reload --mode development"
+    "start": "webpack serve --live-reload --mode development",
+    "test:headed": "npm run build && playwright test --headed",
+    "test:ui": "npm run build && playwright test --ui",
+    "test:report": "playwright show-report"
   },
   "author": "Dvd848",
   "license": "MIT",
@@ -20,6 +23,7 @@
     "bootstrap": "^5.2.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^18.15.13",
     "autoprefixer": "^10.4.14",
     "css-loader": "^6.7.3",

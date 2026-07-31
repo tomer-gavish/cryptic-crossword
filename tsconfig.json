@@ -108,7 +108,12 @@
     // "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
     "skipLibCheck": true                                 /* Skip type checking all .d.ts files. */
   },
-  "watchOptions": 
+  /* Only the app is compiled by ts-loader. Without this, TypeScript defaults to
+     every .ts file in the project — including tests/ and playwright.config.ts,
+     which live outside "rootDir" and would fail the build. The tests have their
+     own tsconfig; Playwright transpiles them itself. */
+  "include": ["src/**/*"],
+  "watchOptions":
     { 
       "watchFile": "dynamicprioritypolling", 
       "watchDirectory": "dynamicprioritypolling", 
