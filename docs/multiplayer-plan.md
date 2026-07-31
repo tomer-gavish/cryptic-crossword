@@ -295,6 +295,29 @@ configured.
 
 ## Delivery order
 
+- ~~**Phase −1 — characterization tests first.**~~ **Done.** 69 Playwright tests in `tests/`, green and
+  non-flaky across repeat runs. See `tests/README.md`. Original scoping below.
+- ~~**Phase 0a — solutions as an optional capability.**~~ **Done — and it was smaller than described here.**
+  Investigation showed the degradation was *already* correct: `attachContextMenu`, `setupCheckSolution` and
+  `randomSingle` each already gated on the field they needed, so there was no broken behaviour to fix. What
+  shipped instead is `src/puzzle-capabilities.ts`: the three scattered `typeof … === 'undefined'` checks became
+  three named type guards (`hasClueSolutions` / `hasSolutionGrid` / `canCheckWholeSolution`). Corpus audit
+  behind that split: 603 puzzles have all three fields, 3 have none (144, 478, 610), and 2 have
+  `sol_grid`+`sol_hash` but no `solutions` (353, 477) — so they are genuinely independent capabilities, not
+  one flag.
+- ~~**Phase 0b — state refactor, zero features.**~~ **Done.** `src/types.ts`, `src/state/ICrosswordState.ts`,
+  `src/state/LocalStorageContext.ts`; `setGridText` split into `renderLetter` / `paintCell` / `applyLetter`
+  with explicit coordinates; `handleRemoteChange` subscribed as the multiplayer seam. `Display.ts` 1475 → 1298
+  lines. All 69 characterization tests still pass, unchanged — which is the whole point of having written them
+  first.
+
+  **Known gap:** `handleRemoteChange` has no test, because nothing can currently produce a change with
+  `origin: 'remote'` — `LocalStorageContext` only ever reports the player's own edits. Phase 2's *first* task
+  is a two-browser test that drives it. Until then the seam is structurally in place but unexercised.
+
+<details>
+<summary>Original Phase −1 / 0 scoping (kept for reference)</summary>
+
 - **Phase −1 — characterization tests first.** The repo has no tests
   (`"test": "echo \"Error: no test specified\" && exit 1"`). Before touching anything, add Playwright and pin
   down *current* single-player behaviour: load a puzzle, click a cell, type a word, check direction swap on
@@ -308,6 +331,9 @@ configured.
 - **Phase 0b — state refactor, zero features.** Extract `LocalStorageContext`, define `ICrosswordState` +
   `onChange`, split `setGridText` → `paintCell`/`applyLetter`. Single-player behaviour is byte-identical —
   proven by Phase −1. This is the riskiest change and it ships independently verifiable.
+
+</details>
+
 - **Phase 1 — infra.** Firebase on the existing GCP project, anon auth, rules, `firebase.json`, `src/config.ts`.
   No UI yet.
 - **Phase 2 — letter sync.** `RoomStorageContext`, `?room=` routing, "solve together" button, share modal.

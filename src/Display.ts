@@ -1,5 +1,17 @@
 import * as bootstrap from 'bootstrap';
 import * as Utils from './Utils';
+import { Direction, type Coordinate, type CrosswordPuzzleInfo, type DirectionKey } from './types';
+import { LocalStorageContext } from './state/LocalStorageContext';
+import {
+    StorageSource,
+    type ICrosswordState,
+    type StateChange,
+} from './state/ICrosswordState';
+import {
+    canCheckWholeSolution,
+    hasClueSolutions,
+    hasSolutionGrid,
+} from './puzzle-capabilities';
 
 declare global {
     interface String {
@@ -9,28 +21,6 @@ declare global {
 
 String.prototype.replaceAt = function(index, replacement) {
     return this.substring(0, index) + replacement + this.substring(index + replacement.length);
-};
-
-type CrosswordPuzzleInfo = {
-    id: number | string;
-    name: string | undefined;
-    date: Date | undefined;
-    author: string;
-    dimensions: {
-        rows: number;
-        columns: number;
-    };
-    grid: string[][];
-    definitions: {
-        down: { [id: string]: string };
-        across: { [id: string]: string };
-    };
-    sol_hash: string | undefined;
-    sol_grid: string[][] | undefined;
-    solutions: {
-        down: { [id: string]: string };
-        across: { [id: string]: string };
-    } | undefined;
 };
 
 interface Config {
@@ -45,11 +35,6 @@ type IndexdInfo = {
     ids: number[];
 };
 
-type Coordinate = {
-    row: number;
-    col: number;
-};
-
 type GridElement = {
     rect: SVGRectElement,
     text: SVGTextElement,
@@ -59,11 +44,6 @@ type GridElement = {
 type ClueData = {
     coordinate: Coordinate,
     directions: Direction[]
-}
-
-enum Direction {
-    Horizontal = "across",
-    Vertical = "down",
 }
 
 type ClickContext = {
@@ -77,240 +57,6 @@ enum ClueAction {
     RevealClueSolution,
 }
 
-type StorageContextStruct = {
-    input : string[],
-    solved_clues : {
-        "across": string,
-        "down": string
-    }
-    version: string
-}
-
-enum StorageSource {
-    None = "None",
-    UrlParam = "UrlParam",
-    LocalStorage = "LocalStorage"
-}
-
-class StorageContext
-{
-    private crossword_id : number | string;
-
-    private rows : number;
-    private cols : number;
-
-    private num_clues_across : number;
-    private num_clues_down : number;
-
-    private context : StorageContextStruct | null = null;
-    private local_storage_key : string;
-
-    private current_storage_source = StorageSource.None;
-
-    private readonly LOCAL_STORAGE_VCN_KEY = "VCN";
-    private readonly LOCAL_STORAGE_VCN_VAL = "1";
-    private readonly LOCAL_STORAGE_STRUCT_VERSION = "2";
-    private readonly LOCAL_STORAGE_KEY_PREFIX = "crossword_";
-    public static readonly STATE_URL_PARAM = "state";
-
-    private readonly EMPTY_CHAR = "?";
-
-    constructor(crossword_id: number | string, rows: number, cols: number, 
-                max_clues_across: number, max_clues_down: number)
-    {
-        this.crossword_id = crossword_id;
-        this.rows = rows;
-        this.cols = cols;
-        this.num_clues_across = max_clues_across + 1;
-        this.num_clues_down = max_clues_down + 1; 
-        
-        this.local_storage_key = this.LOCAL_STORAGE_KEY_PREFIX + crossword_id.toString();
-        
-        this.localStorageInit();
-    }
-
-    public async init()
-    {
-        this.context = await this.loadContext();
-        console.log(`Solution loaded from ${this.current_storage_source}`)
-    }
-
-    private localStorageInit()
-    {
-        const current_vcn = localStorage.getItem(this.LOCAL_STORAGE_VCN_KEY);
-        
-        if (current_vcn != this.LOCAL_STORAGE_VCN_VAL)
-        {
-            localStorage.clear();
-        }
-        localStorage.setItem(this.LOCAL_STORAGE_VCN_KEY, this.LOCAL_STORAGE_VCN_VAL);
-    }
-
-    private async loadContext()
-    {
-        const urlParams = new URLSearchParams(window.location.search);
-        let input = null;
-
-        try
-        {
-            if (urlParams.has(StorageContext.STATE_URL_PARAM)) 
-            {
-                const urlParamValue = urlParams.get(StorageContext.STATE_URL_PARAM);
-                if (urlParamValue != null)
-                {
-                    input = decodeURIComponent(urlParamValue);
-                    input = await Utils.StringCompressor.decompress(input);
-                    this.current_storage_source = StorageSource.UrlParam;
-                }
-            }
-        }
-        catch (error)
-        {
-            input = null;
-        }
-
-        if (input == null)
-        {
-            input = localStorage.getItem(this.local_storage_key);
-            this.current_storage_source = StorageSource.LocalStorage;
-        }
-
-        try
-        {
-            if (input == null || input == "")
-            {
-                throw new Error("No previous input");
-            }
-
-            let context = JSON.parse(input);
-            if (Array.isArray(context))
-            {
-                // Migrate from legacy format
-                context = context.map((innerArray: string[]) =>
-                    innerArray.map((str: string) => str === "" ? this.EMPTY_CHAR : str).join("")
-                );
-                context = this.generateContext(context);
-            }
-            const input_arr = context["input"];
-            if (input_arr.length != this.rows || input_arr[0].length != this.cols)
-            {
-                throw new Error("Invalid input");
-            }
-
-            if ( 
-                (context["solved_clues"]["across"].length != this.num_clues_across)
-                ||
-                (context["solved_clues"]["down"].length != this.num_clues_down)
-            )
-            {
-                throw new Error("Invalid input: Solved clues");
-            }
-
-            return context;
-        }
-        catch (err)
-        {
-            this.current_storage_source = StorageSource.None;
-            //console.log(err);
-            let arr = Array.from({ length: this.rows }, () => this.EMPTY_CHAR.repeat(this.cols));
-            return this.generateContext(arr);
-        }
-    }
-
-    private generateContext(input: string[]) : StorageContextStruct {
-        return {
-            "input": input, 
-            "solved_clues": {
-                "across": "0".repeat(this.num_clues_across),
-                "down": "0".repeat(this.num_clues_down)
-            },
-            "version": this.LOCAL_STORAGE_STRUCT_VERSION
-        };
-    }
-
-    public getLetter(coordinate: Coordinate) : string
-    {
-        if (coordinate.row < 0 || coordinate.row >= this.rows 
-            || coordinate.col < 0 || coordinate.col >= this.cols)
-        {
-            throw new Error("Invalid input for getLetter!");
-        }
-
-        const res = this.context!["input"][coordinate.row].charAt(coordinate.col);
-        return res == this.EMPTY_CHAR ? "" : res;
-    }
-
-    public setLetter(coordinate: Coordinate | null, letter: string) : void
-    {
-        if (coordinate == null)
-        {
-            return;
-        }
-
-        if (coordinate.row < 0 || coordinate.row >= this.rows 
-            || coordinate.col < 0 || coordinate.col >= this.cols || letter.length > 1)
-        {
-            throw new Error("Invalid input for setLetter!");
-        }
-
-        this.context!["input"][coordinate.row] 
-            = this.context!["input"][coordinate.row].replaceAt(coordinate.col, letter == "" ? this.EMPTY_CHAR : letter);
-        localStorage.setItem(this.local_storage_key, JSON.stringify(this.context!));
-    }
-
-    public setClueSolved(clueId: number, direction: "down" | "across", solved: boolean) 
-    {
-        this.context!["solved_clues"][direction] 
-            = this.context!["solved_clues"][direction].replaceAt(clueId - 1, Number(solved).toString());
-        localStorage.setItem(this.local_storage_key, JSON.stringify(this.context!));
-    }
-
-    public getClueSolved(clueId: number, direction: "down" | "across") : boolean 
-    {
-        return this.context!["solved_clues"][direction].charAt(clueId - 1) == Number(true).toString();
-    }
-
-    public getCrosswordId() : number | string 
-    {
-        return this.crossword_id;
-    }
-
-    public getState() : string 
-    {
-        return JSON.stringify(this.context);
-    }
-
-    public getCurrentStorageSource() : StorageSource 
-    {
-        return this.current_storage_source;
-    }
-
-    public getPrimaryStorageSource() : StorageSource 
-    {
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has(StorageContext.STATE_URL_PARAM)) 
-        {
-            return StorageSource.UrlParam;
-        }
-
-        if (localStorage.hasOwnProperty(this.local_storage_key))
-        {
-            return StorageSource.LocalStorage;
-        }
-
-        return StorageSource.None;
-    }
-
-    public forceFlushContext() 
-    {
-        const input = localStorage.getItem(this.local_storage_key);
-        if (input != null && input != "")
-        {
-            localStorage.setItem(this.local_storage_key + "_backup", input);
-        }
-        localStorage.setItem(this.local_storage_key, JSON.stringify(this.context!));
-    }
-}
 
 export default class Display 
 {
@@ -324,7 +70,7 @@ export default class Display
         direction : Direction.Horizontal
     };
     private activeContextMenu : bootstrap.Popover | null = null;
-    private storageContext : StorageContext | null = null;
+    private storageContext : ICrosswordState | null = null;
     private clues: Record<number, ClueData> = {};
     private puzzleInfo : CrosswordPuzzleInfo | null = null;
     private config : Config = {};
@@ -359,12 +105,13 @@ export default class Display
         {
             const getMaxId = (x: { [id: string]: string }) => Math.max(...Object.keys(x).map(id => parseInt(id, 10)));
     
-            this.storageContext = new StorageContext(puzzleInfo.id, 
+            this.storageContext = new LocalStorageContext(puzzleInfo.id, 
                                                         puzzleInfo.dimensions.rows, 
                                                         puzzleInfo.dimensions.columns,
                                                         getMaxId(puzzleInfo.definitions.across),
                                                         getMaxId(puzzleInfo.definitions.down));
             await this.storageContext.init();
+            this.storageContext.onChange((change) => this.handleRemoteChange(change));
         }
         
         this.addKeyListener();
@@ -402,12 +149,12 @@ export default class Display
             throw Error("Invalid direction!");
         }
 
-        if (typeof (puzzleInfo.solutions) === 'undefined')
+        if (!hasClueSolutions(puzzleInfo))
         {
             throw Error("No solution for single!");
         }
 
-        const solution = puzzleInfo.solutions[direction as "across" | "down"][defId];
+        const solution = puzzleInfo.solutions[direction as DirectionKey][defId];
         if (typeof (solution) === 'undefined')
         {
             throw Error("Can't find definition!");
@@ -418,7 +165,7 @@ export default class Display
         puzzleInfo.grid = [Array(puzzleInfo.dimensions.columns).fill("")];
         puzzleInfo.grid[0][solution.length - 1] = "1";
         puzzleInfo.sol_grid = [solution.split('').reverse()];
-        puzzleInfo.definitions = {"across": {1: puzzleInfo.definitions[direction as "across" | "down"][defId]}, "down": {}};
+        puzzleInfo.definitions = {"across": {1: puzzleInfo.definitions[direction as DirectionKey][defId]}, "down": {}};
         puzzleInfo.sol_hash = await Utils.digestMessage(puzzleInfo.sol_grid[0].join(""));
 
         await this.showCrossword(puzzleInfo, {"skipStorage": true, "skipShare": true, "skipContextMenu": true, "skipCurrentDef": true});
@@ -549,7 +296,7 @@ export default class Display
 
     private setupCheckSolution(puzzleInfo: CrosswordPuzzleInfo, config: Config)
     {
-        if (typeof (puzzleInfo.sol_hash) === 'undefined' || puzzleInfo.sol_hash == "")
+        if (!canCheckWholeSolution(puzzleInfo))
         {
             document.getElementById("check_solution_wrapper")!.innerHTML = "";
             document.getElementById("tabs_header")?.classList.add("hide");
@@ -593,7 +340,7 @@ export default class Display
 
             // Full solution
 
-            if (typeof (puzzleInfo.sol_grid) !== 'undefined')
+            if (hasSolutionGrid(puzzleInfo))
             {
                 //document.getElementById("fullSolution")?.appendChild(this.createPuzzleSvg(puzzleInfo, true));
                 const divElement = document.createElement('div');
@@ -716,7 +463,7 @@ export default class Display
                 const urlWithoutParameters = currentURL.split('?')[0];
                 Utils.StringCompressor.compress(that.storageContext!.getState()).then((compressedString: string) => {
                     shareLink.value = `${urlWithoutParameters}?id=${that.storageContext?.getCrosswordId()}` + 
-                                      `&${StorageContext.STATE_URL_PARAM}=${encodeURIComponent(compressedString)}`;
+                                      `&${LocalStorageContext.STATE_URL_PARAM}=${encodeURIComponent(compressedString)}`;
                 });
                 shareLink.setSelectionRange(0, shareLink.value.length);
             }); 
@@ -726,7 +473,7 @@ export default class Display
         }
     }
 
-    private createClues(directionStr: "across" | "down", puzzleInfo: CrosswordPuzzleInfo) : HTMLDListElement
+    private createClues(directionStr: DirectionKey, puzzleInfo: CrosswordPuzzleInfo) : HTMLDListElement
     {
         const that = this;
         const dl : HTMLDListElement = document.createElement("dl");
@@ -890,7 +637,11 @@ export default class Display
 
                         if (this.storageContext)
                         {
-                            this.setGridText(letter_elem, this.storageContext.getLetter({row: row, col: col}));
+                            // Render only: this.grid[row][col] is not assigned
+                            // until the end of this iteration, and restoring a
+                            // saved letter must not be mistaken for an edit.
+                            Display.renderLetter(
+                                letter_elem, this.storageContext.getLetter({row: row, col: col}));
                         }
 
                         if (clue_id != null)
@@ -991,7 +742,7 @@ export default class Display
         });
         divElement.appendChild(separateWordsElement);
         
-        if (typeof (puzzleInfo.solutions) !== 'undefined') {
+        if (hasClueSolutions(puzzleInfo)) {
             const checkClueElement = document.createElement('button');
             checkClueElement.type = "button";
             checkClueElement.className = 'btn btn-secondary';
@@ -1031,7 +782,7 @@ export default class Display
 
     private handleContextMenuClueAction(puzzleInfo: CrosswordPuzzleInfo, targetDiv: Element, action: ClueAction) 
     {
-        if (typeof(puzzleInfo.solutions) == "undefined") 
+        if (!hasClueSolutions(puzzleInfo))
         {
             return;
         }
@@ -1288,7 +1039,8 @@ export default class Display
         this.highlightDefinitionByCoordinate({row: row, col: col});
     }
 
-    private setGridText(textElement: SVGTextElement, letter: string) : void
+    /** Hebrew final forms are never used in the grid — fold them to the regular form. */
+    private static normalizeLetter(letter: string) : string
     {
         const translation: Record<string, string> = {
             'ם': 'מ',
@@ -1297,12 +1049,81 @@ export default class Display
             'ץ': 'צ',
             'ך': 'כ',
         }
+        return letter in translation ? translation[letter] : letter;
+    }
+
+    /**
+     * Draw a letter into a square's text element. Pure rendering — nothing is
+     * persisted, and no coordinate is needed, so this can run during the
+     * initial paint before `this.grid` has been populated.
+     *
+     * The colour is chosen from the letter as typed, before normalization,
+     * because only latin letters are marked red and normalization only ever
+     * touches Hebrew.
+     */
+    private static renderLetter(textElement: SVGTextElement, letter: string) : void
+    {
         textElement.setAttribute("fill", /^[a-zA-Z]$/.test(letter) ? "red" : "black");
-        if (letter in translation) {
-            letter = translation[letter];
+        textElement.textContent = Display.normalizeLetter(letter);
+    }
+
+    /** Draw a letter into the square at `coordinate`. Renders only. */
+    private paintCell(coordinate: Coordinate, letter: string) : void
+    {
+        const gridElement = this.grid[coordinate.row]?.[coordinate.col];
+        if (gridElement == null)
+        {
+            return;
         }
-        textElement.textContent = letter;
-        this.storageContext?.setLetter(this.clickContext.activeCoordinate, letter);
+        Display.renderLetter(gridElement.text, letter);
+    }
+
+    /**
+     * Draw a letter AND persist it — the path a local edit takes.
+     *
+     * The coordinate is explicit. Its predecessor, `setGridText`, took a text
+     * element but wrote to `clickContext.activeCoordinate`, so the square it
+     * drew and the square it saved were only incidentally the same one; during
+     * the initial paint the active coordinate was null and the write silently
+     * did nothing. Remote edits have no active coordinate at all, so the
+     * coordinate has to travel with the letter.
+     */
+    private applyLetter(coordinate: Coordinate, letter: string) : void
+    {
+        this.paintCell(coordinate, letter);
+        this.storageContext?.setLetter(coordinate, Display.normalizeLetter(letter));
+    }
+
+    /**
+     * Apply a change that did not originate in this browser.
+     *
+     * Nothing produces remote changes yet — `LocalStorageContext` only ever
+     * reports the player's own edits. This is the seam the room-backed state
+     * implementation plugs into: once it exists, another player's letters
+     * arrive here and are drawn by exactly the same code that draws your own.
+     */
+    private handleRemoteChange(change: StateChange) : void
+    {
+        if (change.origin !== 'remote')
+        {
+            // Local edits are already on screen — applyLetter drew them before
+            // handing them to the state layer.
+            return;
+        }
+
+        if (change.kind === 'letter')
+        {
+            this.paintCell(change.coordinate, change.letter);
+            return;
+        }
+
+        const checkbox = <HTMLInputElement>document.getElementById(
+            `clue_checkbox_${change.clueId}_${change.direction}`);
+        if (checkbox && checkbox.checked !== change.solved)
+        {
+            checkbox.checked = change.solved;
+            checkbox.dispatchEvent(new Event('change'));
+        }
     }
 
     private addKeyListener()
@@ -1330,22 +1151,24 @@ export default class Display
                 return;
             }
 
-            const gridElement = that.grid[that.clickContext.activeCoordinate.row][that.clickContext.activeCoordinate.col];
+            // The square being edited, captured before the cursor moves on.
+            const target = that.clickContext.activeCoordinate;
+            const gridElement = that.grid[target.row][target.col];
             if (gridElement == null)
             {
                 return;
             }
 
-            if (eventKey.length === 1 && /^[a-z\u0590-\u05FF]$/.test(eventKey)) 
+            if (eventKey.length === 1 && /^[a-z\u0590-\u05FF]$/.test(eventKey))
             {
-                that.setGridText(gridElement.text, eventKey);
-                that.clickContext.activeCoordinate = that.nextCoordinate(that.clickContext.activeCoordinate);
+                that.applyLetter(target, eventKey);
+                that.clickContext.activeCoordinate = that.nextCoordinate(target);
                 that.highlightDefinitionByCoordinate(that.clickContext.activeCoordinate);
             }
             else if (eventKey === "Backspace")
             {
-                that.setGridText(gridElement.text, "");
-                const prevCoord = that.prevCoordinate(that.clickContext.activeCoordinate);
+                that.applyLetter(target, "");
+                const prevCoord = that.prevCoordinate(target);
                 if (prevCoord != null)
                 {
                     that.clickContext.activeCoordinate = prevCoord;
@@ -1354,7 +1177,7 @@ export default class Display
             }
             else if (eventKey == "Delete")
             {
-                that.setGridText(gridElement.text, "");
+                that.applyLetter(target, "");
             }
             event.stopImmediatePropagation();
             
