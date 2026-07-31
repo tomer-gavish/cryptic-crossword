@@ -50,13 +50,14 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      # The Realtime Database emulator is a Java process. Playwright's
-      # webServer starts the emulator itself; this only guarantees a JDK.
+      # The Realtime Database emulator is a Java process, and firebase-tools
+      # requires a JDK of at least 21 — anything older fails at startup with
+      # "no longer supports Java version before 21".
       - name: Set up Java for the Firebase emulator
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Cache the Firebase emulator
         uses: actions/cache@v4

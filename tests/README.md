@@ -104,8 +104,12 @@ a normal dev machine.
 ## The Firebase emulator
 
 `playwright.config.ts` starts `firebase emulators:start --only database,auth`
-alongside the static server; nothing needs starting by hand. It requires a JDK
-(the database emulator is a Java process) — preinstalled on GitHub's runners.
+alongside the static server; nothing needs starting by hand.
+
+It requires **JDK 21 or newer**: the database emulator is a Java process, and
+firebase-tools refuses to start on anything older with "no longer supports Java
+version before 21". GitHub's runners default to an older JDK, so the workflow
+selects 21 explicitly.
 
 The project id is `demo-crossword`. The `demo-` prefix makes the Firebase SDKs
 refuse to contact any real backend, so a misconfigured test cannot reach
