@@ -58,6 +58,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Cache the Firebase emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}
+
+      # Downloading the emulator jar as its own step keeps it out of the
+      # window Playwright allows the webServer to become ready, and gives any
+      # download failure its own log rather than a bare "Exit code: 1".
+      - name: Download the Firebase database emulator
+        run: npx firebase setup:emulators:database
+
       # Builds the production bundle first: the suite drives dist/, which is
       # what GitHub Pages actually serves.
       - name: Run characterization tests

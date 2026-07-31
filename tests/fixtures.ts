@@ -64,6 +64,9 @@ export async function installOfflineRoutes(page: Page): Promise<void> {
             body: await fs.promises.readFile(BOOTSTRAP_CSS, 'utf8'),
         });
     });
+    // Analytics is disabled in index.html, so this should never fire. Kept as
+    // a backstop: if a tag is ever reintroduced, tests must still not report
+    // page views to anyone.
     await page.route('**/googletagmanager.com/**', (route) => route.abort());
 }
 

@@ -80,7 +80,10 @@ export default defineConfig({
             url: 'http://127.0.0.1:9000/.json?ns=demo-crossword',
             reuseExistingServer: !process.env.CI,
             timeout: 180_000,
-            stdout: 'ignore',
+            // Both streams are piped on purpose: the Firebase CLI reports
+            // startup failures on stdout, so ignoring it turns any problem
+            // here into a bare "Exit code: 1" with nothing to go on.
+            stdout: 'pipe',
             stderr: 'pipe',
         },
     ],
