@@ -1,7 +1,15 @@
-# Characterization tests
+# Tests
 
-These tests pin down what the solver does **today**, before the multiplayer
-refactor described in [`docs/multiplayer-plan.md`](../docs/multiplayer-plan.md).
+Two suites live here:
+
+- **Characterization** (`grid-interaction`, `storage`, `clues`, `share-state`,
+  `solutions`, `navigation`) — what the solver did before the multiplayer work
+  began, so that refactors have to prove themselves.
+- **Multiplayer** (`multiplayer.spec.ts`) — two browsers sharing one grid,
+  driven against the Firebase emulator.
+
+The characterization tests pin down what the solver does **today**, as described
+in [`docs/multiplayer-plan.md`](../docs/multiplayer-plan.md).
 
 They assert *observed* behaviour, not *desired* behaviour. Where the current
 behaviour is arguably wrong, the test records it with a comment explaining why,
@@ -35,6 +43,7 @@ or you will be testing stale code.
 | `share-state.spec.ts` | The `?state=` share link: generation, read-only viewing, import/back, corrupt-state fallback |
 | `solutions.spec.ts` | How the UI degrades on puzzles with no answer key |
 | `navigation.spec.ts` | `?id=<digits>`, `?id=<hex>` (external bucket), `?single=`, index page, and every fallback path |
+| `multiplayer.spec.ts` | Two browsers in one room: letters and solved marks replicating, concurrent edits to different squares both surviving, same-square convergence, late joiners catching up, room isolation, and solo play staying on localStorage |
 
 ## Fixtures
 
@@ -68,13 +77,49 @@ view and clicks its centre point, hitting whichever element is topmost.
 
 **No network.** Bootstrap's stylesheet is served from `node_modules` via request
 interception and Google Analytics is aborted, so the suite is deterministic and
-runs offline. A missing Bootstrap stylesheet silently breaks visibility
-assertions, because modals and tab panes are display-driven by its CSS.
+runs offline.
+
+Serving that stylesheet also requires stripping the `integrity` attribute from
+the served HTML: `index.html` pins an SRI hash for Bootstrap **5.2.3**, but
+`package.json` asks for `^5.2.3` and npm resolves it to **5.3.x**, so the
+substitute bytes fail the check and the browser blocks them. Worth knowing that
+the same skew exists in production — the bundled Bootstrap *JavaScript* comes
+from npm at 5.3.x while the *stylesheet* comes from the CDN at 5.2.3.
 
 **Chromium only.** The CDP dependency above means these tests do not run on
 Firefox or WebKit as written.
+
+**Local Network Access.** The launch args disable
+`LocalNetworkAccessChecks`. Recent Chromium treats a request from the page to a
+*different loopback port* — which is exactly how the multiplayer specs reach the
+Firebase emulator — as a local-network request and blocks it. It does so
+silently: the request never completes, with no error and no failed-request
+event, while same-origin requests keep working so the app looks healthy.
 
 **Pre-installed browsers.** Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to point at an
 existing Chromium binary in sandboxes or CI images where `npx playwright install`
 is unavailable and the bundled browser version does not match. Leave it unset on
 a normal dev machine.
+
+## The Firebase emulator
+
+`playwright.config.ts` starts `firebase emulators:start --only database,auth`
+alongside the static server; nothing needs starting by hand. It requires a JDK
+(the database emulator is a Java process) — preinstalled on GitHub's runners.
+
+The project id is `demo-crossword`. The `demo-` prefix makes the Firebase SDKs
+refuse to contact any real backend, so a misconfigured test cannot reach
+production data.
+
+Rules come from the real `database.rules.json`, so the emulator enforces exactly
+what deploys. Note the loader wants **strict JSON** — `//` comments are rejected,
+and the resulting error names the rules file while quoting content that isn't in
+it, which is misleading.
+
+If the CLI reports `Unable to parse JSON` on a rules file that is plainly valid,
+the cause is usually an HTTP proxy: the CLI routes its own request to the
+emulator through it and then tries to parse the proxy's error page. The config
+strips proxy variables from the emulator's environment for this reason.
+
+Each test mints a unique room id, so tests are isolated without teardown and
+safe in parallel.

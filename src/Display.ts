@@ -4,6 +4,7 @@ import { Direction, type Coordinate, type CrosswordPuzzleInfo, type DirectionKey
 import { LocalStorageContext } from './state/LocalStorageContext';
 import {
     StorageSource,
+    type CrosswordStateFactory,
     type ICrosswordState,
     type StateChange,
 } from './state/ICrosswordState';
@@ -29,6 +30,12 @@ interface Config {
     skipStorage?: boolean;
     skipShare?: boolean;
     skipCurrentDef?: boolean;
+    /**
+     * Supplies the state layer. Omitted for solo play, which falls back to
+     * localStorage; provided by app.ts when a `?room=` is present, after
+     * lazily importing the room-backed implementation.
+     */
+    createState?: CrosswordStateFactory;
   }
 
 type IndexdInfo = {
@@ -76,6 +83,14 @@ export default class Display
     private config : Config = {};
     private wordsSeparated = false;
     private puzzleSvg : SVGElement | null = null;
+    /**
+     * Set while a remote change is being applied to the DOM. The clue
+     * checkbox's own change handler persists whatever it sees, so without this
+     * guard applying a remote "solved" mark would write it straight back —
+     * and the other client would see *that* as remote in turn, bouncing the
+     * same value between browsers forever.
+     */
+    private applyingRemoteChange = false;
 
     private readonly TILE_DIMENSIONS = 40;
     private readonly BLOCKED_TILE = '#';
@@ -104,12 +119,22 @@ export default class Display
         if (!config.skipStorage)
         {
             const getMaxId = (x: { [id: string]: string }) => Math.max(...Object.keys(x).map(id => parseInt(id, 10)));
-    
-            this.storageContext = new LocalStorageContext(puzzleInfo.id, 
-                                                        puzzleInfo.dimensions.rows, 
-                                                        puzzleInfo.dimensions.columns,
-                                                        getMaxId(puzzleInfo.definitions.across),
-                                                        getMaxId(puzzleInfo.definitions.down));
+
+            const stateOptions = {
+                crosswordId: puzzleInfo.id,
+                rows: puzzleInfo.dimensions.rows,
+                cols: puzzleInfo.dimensions.columns,
+                maxClueAcross: getMaxId(puzzleInfo.definitions.across),
+                maxClueDown: getMaxId(puzzleInfo.definitions.down),
+            };
+
+            this.storageContext = config.createState
+                ? config.createState(stateOptions)
+                : new LocalStorageContext(stateOptions.crosswordId,
+                                          stateOptions.rows,
+                                          stateOptions.cols,
+                                          stateOptions.maxClueAcross,
+                                          stateOptions.maxClueDown);
             await this.storageContext.init();
             this.storageContext.onChange((change) => this.handleRemoteChange(change));
         }
@@ -513,7 +538,10 @@ export default class Display
                 } else {
                     dd.classList.remove("solved");
                 }
-                that.storageContext?.setClueSolved(int_id, directionStr, checkbox.checked);
+                if (!that.applyingRemoteChange)
+                {
+                    that.storageContext?.setClueSolved(int_id, directionStr, checkbox.checked);
+                }
                 const firstCoordinate = that.getFirstCoordinateForActiveCoordinate();
                 if (firstCoordinate != null)
                 {
@@ -1122,7 +1150,17 @@ export default class Display
         if (checkbox && checkbox.checked !== change.solved)
         {
             checkbox.checked = change.solved;
-            checkbox.dispatchEvent(new Event('change'));
+            // Reuse the existing handler so the list styling and the toolbar
+            // button stay in step, but suppress its write-back.
+            this.applyingRemoteChange = true;
+            try
+            {
+                checkbox.dispatchEvent(new Event('change'));
+            }
+            finally
+            {
+                this.applyingRemoteChange = false;
+            }
         }
     }
 

@@ -8,7 +8,7 @@
  * of this, and any change that does show up here is a decision, not an
  * accident.
  */
-import { test as base, expect, type CDPSession, type Page } from '@playwright/test';
+import { test as base, expect, type Browser, type CDPSession, type Page } from '@playwright/test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -28,24 +28,48 @@ export const PUZZLE_WITH_SOLUTIONS = '1';
  *  digitized crossword looks like this. */
 export const PUZZLE_WITHOUT_SOLUTIONS = '610';
 
+/**
+ * The page pulls Bootstrap's stylesheet from jsdelivr and analytics from
+ * Google. Neither is reachable offline, and a missing Bootstrap stylesheet
+ * silently breaks every visibility assertion (modals and tab panes are
+ * display-driven by Bootstrap CSS). Serve the stylesheet from the copy npm
+ * already installed, and drop analytics entirely — that makes the suite
+ * deterministic and network-free without touching production code.
+ *
+ * Exported because multiplayer tests open a second player's page by hand and
+ * it needs the same treatment.
+ */
+export async function installOfflineRoutes(page: Page): Promise<void> {
+    // index.html pins the CDN stylesheet with an SRI hash for Bootstrap 5.2.3,
+    // but npm resolves "^5.2.3" to 5.3.x — so the locally served bytes fail the
+    // integrity check and the browser blocks them. Strip the attribute from the
+    // served HTML so the substitute is actually applied. (The version skew
+    // itself is real and lives in production too: the bundled Bootstrap *JS*
+    // comes from npm while the *CSS* comes from the CDN at a different
+    // version.)
+    await page.route(/^http:\/\/127\.0\.0\.1:\d+\/(index\.html)?(\?[^#]*)?$/, async (route) => {
+        const response = await route.fetch();
+        const html = (await response.text()).replace(/\s+integrity="[^"]*"/g, '');
+        await route.fulfill({
+            status: response.status(),
+            contentType: 'text/html; charset=utf-8',
+            body: html,
+        });
+    });
+
+    await page.route('**/cdn.jsdelivr.net/**bootstrap**', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'text/css',
+            body: await fs.promises.readFile(BOOTSTRAP_CSS, 'utf8'),
+        });
+    });
+    await page.route('**/googletagmanager.com/**', (route) => route.abort());
+}
+
 export const test = base.extend<{ page: Page }>({
     page: async ({ page }, use) => {
-        // The page pulls Bootstrap's stylesheet from jsdelivr and analytics from
-        // Google. Neither is reachable offline, and a missing Bootstrap
-        // stylesheet silently breaks every visibility assertion (modals and tab
-        // panes are display-driven by Bootstrap CSS). Serve the stylesheet from
-        // the copy npm already installed, and drop analytics entirely — that
-        // makes the suite deterministic and network-free without touching
-        // production code.
-        await page.route('**/cdn.jsdelivr.net/**bootstrap**', async (route) => {
-            await route.fulfill({
-                status: 200,
-                contentType: 'text/css',
-                body: await fs.promises.readFile(BOOTSTRAP_CSS, 'utf8'),
-            });
-        });
-        await page.route('**/googletagmanager.com/**', (route) => route.abort());
-
+        await installOfflineRoutes(page);
         await use(page);
     },
 });
@@ -57,6 +81,37 @@ export async function openCrossword(page: Page, id: string): Promise<void> {
     await page.goto(`/?id=${id}`);
     await expect(page.locator('#wrapper')).toBeVisible();
     await expect(page.locator('#crossword svg')).toBeVisible();
+}
+
+/**
+ * Open a crossword as part of a shared room. Waits for the grid, which only
+ * appears after anonymous sign-in and the first room snapshot have completed.
+ */
+export async function openRoom(page: Page, id: string, roomId: string): Promise<void> {
+    await page.goto(`/?id=${id}&room=${roomId}`);
+    await expect(page.locator('#wrapper')).toBeVisible();
+    await expect(page.locator('#crossword svg')).toBeVisible();
+}
+
+/**
+ * A fresh room id per test. Rooms are never torn down, so isolation comes from
+ * never reusing an id rather than from cleaning up — which also keeps tests
+ * safe to run in parallel.
+ */
+export function uniqueRoomId(): string {
+    return `test${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * A second player: a separate browser context, so they get their own anonymous
+ * uid. That matters — telling local edits from remote ones depends on the two
+ * players having different uids.
+ */
+export async function newPlayerPage(browser: Browser): Promise<{ page: Page; close: () => Promise<void> }> {
+    const context = await browser.newContext({ locale: 'he-IL' });
+    const page = await context.newPage();
+    await installOfflineRoutes(page);
+    return { page, close: () => context.close() };
 }
 
 /**

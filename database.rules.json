@@ -1,0 +1,78 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "rooms": {
+      "$roomId": {
+        ".read": "auth != null",
+
+        "meta": {
+          ".write": "auth != null && (!data.exists() || data.child('createdBy').val() === auth.uid)",
+          ".validate": "newData.hasChildren(['crosswordId', 'rows', 'cols', 'createdBy'])",
+          "crosswordId": { ".validate": "newData.isString()" },
+          "rows": { ".validate": "newData.isNumber()" },
+          "cols": { ".validate": "newData.isNumber()" },
+          "createdBy": { ".validate": "newData.val() === auth.uid" },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "lastActiveAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        },
+
+        "cells": {
+          "$cell": {
+            ".write": "auth != null && $cell.matches(/^[0-9]+_[0-9]+$/)",
+            ".validate": "!newData.exists() || newData.hasChildren(['ch', 'by', 'at'])",
+            "ch": { ".validate": "newData.isString() && newData.val().length <= 1" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "at": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "solved": {
+          "$clueKey": {
+            ".write": "auth != null && $clueKey.matches(/^(across|down)_[0-9]+$/)",
+            ".validate": "!newData.exists() || newData.hasChildren(['v', 'by', 'at'])",
+            "v": { ".validate": "newData.isBoolean()" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "at": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "presence": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "!newData.exists() || newData.hasChildren(['name', 'at'])",
+            "name": { ".validate": "newData.isString() && newData.val().length <= 40" },
+            "color": { ".validate": "newData.isString() && newData.val().length <= 16" },
+            "row": { ".validate": "newData.isNumber()" },
+            "col": { ".validate": "newData.isNumber()" },
+            "dir": { ".validate": "newData.val() === 'across' || newData.val() === 'down'" },
+            "at": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "notes": {
+          "$clueKey": {
+            "$noteId": {
+              ".write": "auth != null && (!data.exists() || data.child('by').val() === auth.uid)",
+              ".validate": "!newData.exists() || newData.hasChildren(['by', 'at', 'kind'])",
+              "by": { ".validate": "newData.val() === auth.uid" },
+              "at": { ".validate": "newData.isNumber()" },
+              "kind": { ".validate": "newData.val() === 'text' || newData.val() === 'voice'" },
+              "text": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+              "audioUrl": { ".validate": "newData.isString()" },
+              "durationMs": { ".validate": "newData.isNumber()" },
+              "$other": { ".validate": false }
+            }
+          }
+        },
+
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

@@ -311,9 +311,32 @@ configured.
   lines. All 69 characterization tests still pass, unchanged — which is the whole point of having written them
   first.
 
-  **Known gap:** `handleRemoteChange` has no test, because nothing can currently produce a change with
-  `origin: 'remote'` — `LocalStorageContext` only ever reports the player's own edits. Phase 2's *first* task
-  is a two-browser test that drives it. Until then the seam is structurally in place but unexercised.
+  ~~**Known gap:** `handleRemoteChange` has no test.~~ **Closed** — see Phase 2 below.
+
+- **Phase 1 — infra.** **Partly done.** `firebase.json`, `database.rules.json` and `src/config.ts` exist and
+  the emulator runs in CI. **Still needs you:** attach Firebase to the existing GCP project, enable the
+  Anonymous provider, add the GitHub Pages domain to authorized domains, and paste the web config into
+  `PRODUCTION_SETTINGS` in `src/config.ts` (it is deliberately blank). Until that happens multiplayer works
+  against the emulator only, which is why nothing in the UI links to it yet.
+
+- **Phase 2 — letter sync.** **Core done; UI not started.**
+  - `src/state/RoomStorageContext.ts` implements `ICrosswordState` over RTDB, with the per-cell schema.
+  - `?room=<id>` composes with both `?id=` forms in app.ts; Firebase loads via dynamic `import()`, so it sits
+    in its own 241 KB chunk and solo players still download the same 109 KB bundle as before.
+  - 11 emulator-backed tests in `tests/multiplayer.spec.ts` drive two browser contexts with distinct
+    anonymous uids — which is what finally exercises `handleRemoteChange`.
+
+  **Not done, deliberately:** no "solve together" button, no share-link UI, no presence (Phase 3), and no
+  seeding a new room from existing solo progress. Room ids must be hand-written into the URL for now.
+
+  **Bug found and fixed while doing this:** applying a remote solved-mark re-dispatches the clue checkbox's
+  `change` event so the list styling follows, and that handler persists whatever it sees — so two browsers
+  would have bounced the same value between them forever. `Display.applyingRemoteChange` suppresses the
+  write-back; the "does not ping-pong" test covers it.
+
+  **Rules correctness:** RTDB `.write` rules cascade *permissively* — granting write at the room level would
+  have silently defeated the author-only rule on notes and the own-node rule on presence, since only
+  `.validate` still applies at depth. Write access is therefore granted per subtree, never at the room root.
 
 <details>
 <summary>Original Phase −1 / 0 scoping (kept for reference)</summary>
@@ -335,7 +358,7 @@ configured.
 </details>
 
 - **Phase 1 — infra.** Firebase on the existing GCP project, anon auth, rules, `firebase.json`, `src/config.ts`.
-  No UI yet.
+  No UI yet. *(See status above — partly delivered.)*
 - **Phase 2 — letter sync.** `RoomStorageContext`, `?room=` routing, "solve together" button, share modal.
   Writes the full schema (including the `notes/` subtree and its rules) even though notes have no UI yet, so
   nothing needs migrating later. **This is the first real slice:** two browsers, same room link, one types,

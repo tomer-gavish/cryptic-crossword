@@ -18,6 +18,8 @@ export enum StorageSource {
     None = 'None',
     UrlParam = 'UrlParam',
     LocalStorage = 'LocalStorage',
+    /** A shared multiplayer room. Editable, like LocalStorage. */
+    Room = 'Room',
 }
 
 /**
@@ -47,6 +49,23 @@ export type SolvedChange = {
 export type StateChange = LetterChange | SolvedChange;
 
 export type StateChangeListener = (change: StateChange) => void;
+
+/** Everything a state implementation needs to size itself to a puzzle. */
+export type CrosswordStateOptions = {
+    crosswordId: number | string;
+    rows: number;
+    cols: number;
+    maxClueAcross: number;
+    maxClueDown: number;
+};
+
+/**
+ * Builds the state layer for a puzzle. Display uses this rather than
+ * constructing a context itself, so the room-backed implementation — and the
+ * Firebase SDK it drags in — can be loaded lazily and only when a `?room=` is
+ * actually present.
+ */
+export type CrosswordStateFactory = (options: CrosswordStateOptions) => ICrosswordState;
 
 export interface ICrosswordState {
     /** Load any previously saved progress. Must be awaited before use. */

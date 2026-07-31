@@ -11,6 +11,8 @@ on:
       - 'index.html'
       - 'css/**'
       - 'playwright.config.ts'
+      - 'firebase.json'
+      - 'database.rules.json'
       - 'package.json'
       - 'package-lock.json'
   pull_request:
@@ -21,6 +23,8 @@ on:
       - 'index.html'
       - 'css/**'
       - 'playwright.config.ts'
+      - 'firebase.json'
+      - 'database.rules.json'
       - 'package.json'
       - 'package-lock.json'
   workflow_dispatch:
@@ -28,7 +32,7 @@ on:
 jobs:
   playwright:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code
@@ -45,6 +49,14 @@ jobs:
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
+
+      # The Realtime Database emulator is a Java process. Playwright's
+      # webServer starts the emulator itself; this only guarantees a JDK.
+      - name: Set up Java for the Firebase emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       # Builds the production bundle first: the suite drives dist/, which is
       # what GitHub Pages actually serves.
