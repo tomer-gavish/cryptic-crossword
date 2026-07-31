@@ -1,0 +1,19 @@
+{
+    /* Editor/type-checking config for the test suite only. Playwright
+       transpiles these files itself at run time, so nothing is emitted here —
+       this exists so `tsc --noEmit` and IDEs see the right settings, and so the
+       app's tsconfig can stay scoped to src/. */
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "lib": ["ES2022", "DOM"],
+        "types": ["node"],
+        "strict": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "noEmit": true
+    },
+    "include": ["**/*.ts", "../playwright.config.ts"]
+}

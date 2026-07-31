@@ -22,3 +22,12 @@ yarn-error.log*
 
 tmp
 launch.json
+# testing
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
+
+# firebase emulator
+*-debug.log
+.firebase/

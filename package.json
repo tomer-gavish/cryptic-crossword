@@ -4,9 +4,12 @@
   "description": "An archive of a weekly cryptic crossword release",
   "main": "dist/app.bundle.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run build && playwright test",
     "build": "npx webpack --mode production",
-    "start": "webpack serve --live-reload --mode development"
+    "start": "webpack serve --live-reload --mode development",
+    "test:headed": "npm run build && playwright test --headed",
+    "test:ui": "npm run build && playwright test --ui",
+    "test:report": "playwright show-report"
   },
   "author": "Dvd848",
   "license": "MIT",
@@ -17,12 +20,15 @@
   "dependencies": {
     "@popperjs/core": "^2.11.7",
     "@types/bootstrap": "^5.2.6",
-    "bootstrap": "^5.2.3"
+    "bootstrap": "5.2.3",
+    "firebase": "^12.17.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^18.15.13",
     "autoprefixer": "^10.4.14",
     "css-loader": "^6.7.3",
+    "firebase-tools": "^15.25.1",
     "postcss-loader": "^7.2.4",
     "sass": "^1.62.0",
     "sass-loader": "^13.2.2",

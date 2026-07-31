@@ -25,7 +25,10 @@
     // "moduleDetection": "auto",                        /* Control what method is used to detect module-format JS files. */
 
     /* Modules */
-    "module": "es6",                                     /* Specify what module code is generated. */
+    /* es2020 rather than es6: dynamic import() needs it, and the room-backed
+       state layer is loaded that way so the Firebase SDK stays out of the main
+       bundle for solo players. Output is still ES modules. */
+    "module": "es2020",                                  /* Specify what module code is generated. */
     // "rootDir": "./",                                  /* Specify the root folder within your source files. */
     "rootDir": "./src",                                  /* Specify the root folder within your source files. */
     // "moduleResolution": "node10",                     /* Specify how TypeScript looks up a file from a given module specifier. */
@@ -108,7 +111,12 @@
     // "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
     "skipLibCheck": true                                 /* Skip type checking all .d.ts files. */
   },
-  "watchOptions": 
+  /* Only the app is compiled by ts-loader. Without this, TypeScript defaults to
+     every .ts file in the project — including tests/ and playwright.config.ts,
+     which live outside "rootDir" and would fail the build. The tests have their
+     own tsconfig; Playwright transpiles them itself. */
+  "include": ["src/**/*"],
+  "watchOptions":
     { 
       "watchFile": "dynamicprioritypolling", 
       "watchDirectory": "dynamicprioritypolling", 

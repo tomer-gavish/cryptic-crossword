@@ -230,16 +230,13 @@
     </div>
 
     <script src="dist/app.bundle.js" type="module"></script>
-    
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-LG5BEEHFK8"></script>
-    <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
 
-    gtag('config', 'G-LG5BEEHFK8');
-    </script>
+    <!--
+      Google Analytics is disabled. The measurement id inherited from the
+      upstream fork (G-LG5BEEHFK8) belongs to that project's account, so every
+      page view here — including from the test suite — was being reported to
+      somebody else. Restore this only with an id of our own.
+    -->
 
 </body>
 

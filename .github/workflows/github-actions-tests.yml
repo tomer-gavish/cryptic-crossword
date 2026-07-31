@@ -1,0 +1,85 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'crosswords/**'
+      - 'index.html'
+      - 'css/**'
+      - 'playwright.config.ts'
+      - 'firebase.json'
+      - 'database.rules.json'
+      - 'package.json'
+      - 'package-lock.json'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'crosswords/**'
+      - 'index.html'
+      - 'css/**'
+      - 'playwright.config.ts'
+      - 'firebase.json'
+      - 'database.rules.json'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # The Realtime Database emulator is a Java process, and firebase-tools
+      # requires a JDK of at least 21 — anything older fails at startup with
+      # "no longer supports Java version before 21".
+      - name: Set up Java for the Firebase emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache the Firebase emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}
+
+      # Downloading the emulator jar as its own step keeps it out of the
+      # window Playwright allows the webServer to become ready, and gives any
+      # download failure its own log rather than a bare "Exit code: 1".
+      - name: Download the Firebase database emulator
+        run: npx firebase setup:emulators:database
+
+      # Builds the production bundle first: the suite drives dist/, which is
+      # what GitHub Pages actually serves.
+      - name: Run characterization tests
+        run: npm test
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
