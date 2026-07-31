@@ -25,6 +25,17 @@ import {
 
 const COLS = 14;
 
+/**
+ * If every test in this file times out at once, suspect the *auth* emulator
+ * rather than anything here. Playwright decides the emulator webServer is
+ * ready by probing one URL, and ours probes the database; a stale process can
+ * leave the database answering on 9000 while nothing listens on 9099, and then
+ * anonymous sign-in never resolves. Confirm with:
+ *
+ *     curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9099/
+ *
+ * and stop the stale emulator so the suite can start a fresh one.
+ */
 test.describe('shared room', () => {
     test('a letter typed by one player appears for the other', async ({ page, browser }) => {
         const roomId = uniqueRoomId();

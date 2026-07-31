@@ -30,6 +30,10 @@ const launchOptions = {
  */
 export default defineConfig({
     testDir: './tests',
+    // Playwright can only poll one URL per webServer, and ours polls the
+    // database emulator; this waits for auth as well, so tests never start
+    // against a half-ready emulator suite.
+    globalSetup: './tests/global-setup.ts',
     fullyParallel: true,
     forbidOnly: !!process.env.CI,
     retries: process.env.CI ? 2 : 0,
@@ -85,6 +89,14 @@ export default defineConfig({
             // here into a bare "Exit code: 1" with nothing to go on.
             stdout: 'pipe',
             stderr: 'pipe',
+            // The CLI spawns the database emulator as a Java child process and
+            // only stops it during its own clean shutdown. Without enough time
+            // to do that, the CLI is killed and the Java process is orphaned —
+            // still holding port 9000. The next run's reuseExistingServer probe
+            // then sees a healthy database, skips starting the emulator, and
+            // never brings auth up, so every multiplayer test fails on a
+            // sign-in that cannot complete.
+            gracefulShutdown: { signal: 'SIGTERM', timeout: 30_000 },
         },
     ],
 });

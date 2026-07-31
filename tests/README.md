@@ -79,12 +79,15 @@ view and clicks its centre point, hitting whichever element is topmost.
 interception and Google Analytics is aborted, so the suite is deterministic and
 runs offline.
 
-Serving that stylesheet also requires stripping the `integrity` attribute from
-the served HTML: `index.html` pins an SRI hash for Bootstrap **5.2.3**, but
-`package.json` asks for `^5.2.3` and npm resolves it to **5.3.x**, so the
-substitute bytes fail the check and the browser blocks them. Worth knowing that
-the same skew exists in production — the bundled Bootstrap *JavaScript* comes
-from npm at 5.3.x while the *stylesheet* comes from the CDN at 5.2.3.
+That substitution only works because `package.json` pins Bootstrap to the exact
+version `index.html`'s SRI hash was computed for (**5.2.3**, not `^5.2.3`), and
+npm ships byte-identical files to the CDN — so the local copy passes the
+integrity check untouched.
+
+Keep that pin exact. Under a caret range npm resolves to 5.3.x, the hash fails,
+and the browser blocks the stylesheet **silently**: the page still renders, the
+suite still passes, and every visibility assertion quietly starts testing an
+unstyled page. `bootstrap-css.spec.ts` exists to catch precisely that.
 
 **Chromium only.** The CDP dependency above means these tests do not run on
 Firefox or WebKit as written.
@@ -127,3 +130,25 @@ strips proxy variables from the emulator's environment for this reason.
 
 Each test mints a unique room id, so tests are isolated without teardown and
 safe in parallel.
+
+### If every multiplayer test suddenly fails
+
+Suspect an **orphaned database emulator**. The CLI runs the database as a Java
+child and only stops it during its own clean shutdown; if the CLI is killed
+first, that Java process survives and keeps holding port 9000. The next run's
+`reuseExistingServer` probe — which only checks the database — then sees a
+healthy emulator, skips starting one, and never brings **auth** up. Anonymous
+sign-in hangs and every test in `multiplayer.spec.ts` times out, while the
+database looks perfectly fine.
+
+`gracefulShutdown` in `playwright.config.ts` gives the CLI time to stop its
+child, which prevents this. To confirm it has happened anyway:
+
+```
+curl -sS -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:9000/.json?ns=demo-crossword"   # 200
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9099/                            # 000
+pgrep -af firebase-database-emulator
+```
+
+A live Java process with no `firebase emulators:start` parent is the orphan;
+kill it and rerun.

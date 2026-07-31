@@ -40,23 +40,12 @@ export const PUZZLE_WITHOUT_SOLUTIONS = '610';
  * it needs the same treatment.
  */
 export async function installOfflineRoutes(page: Page): Promise<void> {
-    // index.html pins the CDN stylesheet with an SRI hash for Bootstrap 5.2.3,
-    // but npm resolves "^5.2.3" to 5.3.x — so the locally served bytes fail the
-    // integrity check and the browser blocks them. Strip the attribute from the
-    // served HTML so the substitute is actually applied. (The version skew
-    // itself is real and lives in production too: the bundled Bootstrap *JS*
-    // comes from npm while the *CSS* comes from the CDN at a different
-    // version.)
-    await page.route(/^http:\/\/127\.0\.0\.1:\d+\/(index\.html)?(\?[^#]*)?$/, async (route) => {
-        const response = await route.fetch();
-        const html = (await response.text()).replace(/\s+integrity="[^"]*"/g, '');
-        await route.fulfill({
-            status: response.status(),
-            contentType: 'text/html; charset=utf-8',
-            body: html,
-        });
-    });
-
+    // Bootstrap is pinned to the exact version index.html's SRI hash was
+    // computed for, and npm ships the same bytes the CDN does, so the local
+    // substitute passes the integrity check unmodified. `bootstrap-css.spec.ts`
+    // guards that: if the versions ever drift apart again the browser silently
+    // blocks the stylesheet, and every visibility assertion here starts
+    // testing an unstyled page without saying so.
     await page.route('**/cdn.jsdelivr.net/**bootstrap**', async (route) => {
         await route.fulfill({
             status: 200,
