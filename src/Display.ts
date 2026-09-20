@@ -15,7 +15,7 @@ type CrosswordPuzzleInfo = {
     id: number | string;
     name: string | undefined;
     date: Date | undefined;
-    author: string;
+    author: string | undefined;
     dimensions: {
         rows: number;
         columns: number;
@@ -350,7 +350,7 @@ export default class Display
         this.config = config;
 
         document.getElementById("title")!.textContent = this.getCrosswordName(puzzleInfo);
-        document.getElementById("author")!.textContent = `${puzzleInfo.author}`;
+        this.setAuthor(puzzleInfo.author);
         this.crossword.innerHTML = '';
         this.clues_horizontal.innerHTML = '<h3>מאוזן</h3>';
         this.clues_vertical.innerHTML = '<h3>מאונך</h3>';
@@ -452,10 +452,23 @@ export default class Display
         this.selectDefinitionById(1, Direction.Horizontal);
     }
 
+    /** Digitized puzzles may arrive without an author; an empty heading is
+     * better than printing "undefined" above the grid. */
+    private setAuthor(author: string | undefined) : void
+    {
+        const element = document.getElementById("author")!;
+        const name = (author ?? '').trim();
+        element.textContent = name;
+        element.style.display = name == "" ? "none" : "";
+    }
+
     private getCrosswordName(puzzleInfo: CrosswordPuzzleInfo) : string
     {
         if (typeof puzzleInfo.name === 'undefined' && typeof puzzleInfo.date === 'undefined') {
-            return `תשבץ אינטל ${puzzleInfo.id}`;
+            // Archive puzzles are numbered, so their id reads as a title.
+            // Digitized ones carry an upload hash instead, which would print
+            // as a 32-character random string.
+            return /^\d+$/.test(String(puzzleInfo.id)) ? `תשבץ אינטל ${puzzleInfo.id}` : 'תשבץ סרוק';
         }
 
         const parts = ['תשבץ'];
