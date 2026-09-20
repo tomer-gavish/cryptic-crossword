@@ -458,18 +458,17 @@ export default class Display
             return `תשבץ אינטל ${puzzleInfo.id}`;
         }
 
-        let result = 'תשבץ ';
+        const parts = ['תשבץ'];
         if (typeof puzzleInfo.name !== 'undefined') {
-            result += puzzleInfo.name;
+            parts.push(puzzleInfo.name);
         }
 
         if (typeof puzzleInfo.date !== 'undefined') {
             const date = new Date(puzzleInfo.date);
-            const formattedDate = `${date.getDate()}/${(date.getMonth() + 1)}/${date.getFullYear()}`;
-            result += ` ${formattedDate}`;
+            parts.push(`${date.getDate()}/${(date.getMonth() + 1)}/${date.getFullYear()}`);
         }
 
-        return result;
+        return parts.join(' ');
     }
 
     private setTitle(title: string)
